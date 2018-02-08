@@ -46,14 +46,13 @@ type Transfer struct {
 //INIT method
 func (c *Chain) Init(APIstub shim.ChaincodeStubInterface) peer.Response {
   fmt.Println("******* start Init *******")
+
   //Create Owner accounts
   initOwner := Owner{ObjectType:"Owner",Id:"owner",Quantity:"0"}
-
   ownerBytes,_ := json.Marshal(initOwner)
   APIstub.PutState(initOwner.Id , ownerBytes)
 
   fmt.Println("******* end Init *******")
-
   return shim.Success(nil)
 }
 
@@ -93,7 +92,7 @@ func (c *Chain) createBank(APIstub shim.ChaincodeStubInterface, args []string) p
   if len(args) != 1 {
       return shim.Error("Incorrect arguments. Expecting a bankCode")
   }
-  var bank = Bank{ObjectType:"Bank",BankCode:args[0],Accounts:[]string}
+  var bank = Bank{ObjectType:"Bank",BankCode:args[0]}
   bankBytes,_ := json.Marshal(bank)
   APIstub.PutState(args[0],bankBytes)
 
@@ -109,28 +108,41 @@ func (c *Chain) createAccount(APIstub shim.ChaincodeStubInterface, args []string
   return shim.Error("Incorrect arguments. Expecting a AccountNumber, Id ,bc and balance")
   }
 
-  acoount, err := APIstub.GetState(args[0])
+  account, err := APIstub.GetState(args[0])
   if err != nil {
       return shim.Error(fmt.Sprintf("Already exist this AccountNumber: %s with error: %s", args[0], err))
   }
+  if account == nil {
+    return shim.Error(fmt.Sprintf("Already exist this AccountNumber: %s with error: %s", args[0], err))
+  }
+
 
   id, err := APIstub.GetState(args[1])
   if err != nil {
-      return shim.Error(fmt.Sprintf("Already exist this: %s with error: %s", args[1], err))
+    return shim.Error(fmt.Sprintf("Already exist this: %s with error: %s", args[1], err))
+  }
+  if id == nil {
+    return shim.Error(fmt.Sprintf("Already exist this: %s with error: %s", args[1], err))
   }
 
-  bancCode, err := APIstub.GetState(args[2])
+  bankCode, err := APIstub.GetState(args[2])
   if err == nil {
-      return shim.Error(fmt.Sprintf("Not exist this Bank: %s with error: %s", args[2], err))
+    return shim.Error(fmt.Sprintf("Not exist this Bank: %s with error: %s", args[2], err))
+  }
+  if bankCode == nil {
+    return shim.Error(fmt.Sprintf("Not exist this Bank: %s with error: %s", args[2], err))
   }
 
   balance, err := strconv.ParseFloat(args[3], 32)
   if err != nil {
-      return shim.Error("Incorrect arguments. Expecting a UserID and balance.")
+    return shim.Error("Incorrect arguments. Expecting a UserID and balance.")
+  }
+  if balance < 0  {
+    return shim.Error("Incorrect arguments. Expecting a UserID and balance.")
   }
 
-  var account = Account{ObjectType:"Account",AccountNumber:args[0],Id:args[1],BankCode:args[2],Balance:balance}
-  accountBytes,_ := json.Marshal(account)
+  var accounts = Account{ObjectType:"Account",AccountNumber:args[0],Id:args[1],BankCode:args[2],Balance:balance}
+  accountBytes,_ := json.Marshal(accounts)
   APIstub.PutState(args[0],accountBytes)
 
   //Bank内の該当の銀行コードの[]Account配列の中にこの構造体（Account）を入れたい
@@ -153,32 +165,42 @@ func (c *Chain) transfer(APIstub shim.ChaincodeStubInterface, args []string) pee
       return shim.Error(fmt.Sprintf("Failed to get txid: %s with error: %s", args[0], err))
   }
 
-  value0, err := APIstub.GetState(args[1])
+  if txid64 == nil {
+    return shim.Error(fmt.Sprintf("Failed to get txid: %s with error: %s", args[0], err))
+  }
+
+  fromAccount, err := APIstub.GetState(args[1])
   if err != nil {
       return shim.Error(fmt.Sprintf("Failed to get balance: %s with error: %s", args[1], err))
   }
-  if value0 == nil{
+  if fromAccount == nil{
       return shim.Error(fmt.Sprintf("FromUser not found: %s", args[1]))
   }
 
-  value1, err := APIstub.GetState(args[2])
+  toAccount, err := APIstub.GetState(args[2])
   if err != nil {
       return shim.Error(fmt.Sprintf("Failed to get balance: %s with error: %s", args[2], err))
   }
-  if value1 == nil{
+  if toAccount == nil{
       return shim.Error(fmt.Sprintf("ToUser not found: %s", args[2]))
   }
 
-  quantity64, err := strconv.ParseFloat(args[3], 32)
+  quantity32, err := strconv.ParseFloat(args[3], 32)
   if err != nil {
       return shim.Error("Incorrect arguments. Expecting a UserID and balance.")
   }
 
-  fee64, err := strconv.ParseFloat(args[4], 32)
+  if quantity32 < 0 {
+    return shim.Error("Incorrect arguments. Expecting a balance.")
+  }
+
+  fee32, err := strconv.ParseFloat(args[4], 32)
   if err != nil {
       return shim.Error("Incorrect arguments. Expecting a UserID and balance fee.")
   }
-
+  if fee32 < 0 {
+    return shim.Error("Incorrect arguments. Expecting a fee.")
+  }
 
 
   //add fee to owner account
